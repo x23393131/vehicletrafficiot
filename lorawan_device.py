@@ -28,7 +28,7 @@ client.tls_set(
 client.connect(BROKER, PORT)
 client.loop_start()
 
-print("🚀 LoRaWAN device started. Publishing traffic data...")
+print(" LoRaWAN device started. Publishing traffic data...")
 
 while True:
     payload = {
@@ -37,5 +37,5 @@ while True:
         "vehicle_count": random.randint(1, 20)
     }
     client.publish(TOPIC, json.dumps(payload))
-    print("📡 Sent:", payload)
+    print(" Sent:", payload)
     time.sleep(5)

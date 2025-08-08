@@ -42,7 +42,7 @@ def connect(sid, environ):
 
 @sio.event
 def disconnect(sid):
-    print(f"📡 Client disconnected: {sid}")
+    print(f" Client disconnected: {sid}")
 
 # Helper Functions
 def classify_traffic(vehicle_count):
@@ -91,25 +91,25 @@ def get_gateways():
 # MQTT Callbacks
 def on_connect(client, userdata, flags, reason_code, properties):
     if reason_code == 0:
-        print("✅ Connected to AWS IoT Core")
+        print("Connected to AWS IoT Core")
         client.subscribe(TOPIC)
-        print(f"📡 Subscribed to topic: {TOPIC}")
+        print(f" Subscribed to topic: {TOPIC}")
     else:
-        print(f"❌ Connection failed (reason code: {reason_code})")
+        print(f"Connection failed (reason code: {reason_code})")
 
 def on_disconnect(client, userdata, disconnect_flags, reason_code, properties):
-    print(f"⚠️ Disconnected from broker (reason: {reason_code})")
-    print("⏳ Reconnecting in 5 seconds...")
+    print(f" Disconnected from broker (reason: {reason_code})")
+    print("Reconnecting in 5 seconds...")
     time.sleep(5)
     try:
         client.reconnect()
     except Exception as e:
-        print(f"❌ Reconnect failed: {str(e)}")
+        print(f"Reconnect failed: {str(e)}")
 
 def on_message(client, userdata, msg):
     try:
         payload = json.loads(msg.payload.decode())
-        print(f"📩 Raw MQTT payload: {payload}")  # Debug log
+        print(f" Raw MQTT payload: {payload}")  # Debug log
         
         timestamp = payload.get("timestamp", time.strftime("%Y-%m-%d %H:%M:%S"))
         location = payload.get("location", {})
@@ -120,8 +120,8 @@ def on_message(client, userdata, msg):
         level = classify_traffic(count)
 
         # Print to console
-        level_emoji = {"LOW":"🟢", "MEDIUM":"🟠", "HEAVY":"🔴"}[level]
-        print(f"\n🚗 Vehicle Data @ {timestamp}")
+        level_emoji = {"LOW":"Green", "MEDIUM":"Orange", "HEAVY":"Red"}[level]
+        print(f"\n Vehicle Data @ {timestamp}")
         print(f"   → Location: ({lat:.6f}, {lng:.6f})")
         print(f"   → Vehicles: {count}")
         print(f"   → Gateway: {gateway}")
@@ -151,7 +151,7 @@ def on_message(client, userdata, msg):
                 'gateway': gateway,
                 'timestamp': timestamp
             })
-            print(f"📢 Emitted update for gateway {gateway}")
+            print(f" Emitted update for gateway {gateway}")
 
         # Publish alerts if needed
         if level in ("MEDIUM", "HEAVY"):
@@ -163,7 +163,7 @@ def on_message(client, userdata, msg):
                 "location": {"lat": lat, "lng": lng}
             }
             client.publish(ALERT_TOPIC, json.dumps(alert))
-            print(f"🚨 Published alert for {gateway}")
+            print(f" Published alert for {gateway}")
 
     except json.JSONDecodeError:
         print("❌ Failed to decode JSON payload")
@@ -172,7 +172,7 @@ def on_message(client, userdata, msg):
 
 def run_flask():
     url = get_cloud9_preview_url(port=8080)
-    print("\n🌐 Dashboard URL:")
+    print("\n Dashboard URL:")
     print(url)
     print("ℹ️ If it 404s, use Cloud9 menu: Preview → Preview Running Application\n")
     app.run(host="0.0.0.0", port=8080)
@@ -193,18 +193,18 @@ def main():
             tls_version=ssl.PROTOCOL_TLSv1_2
         )
     except Exception as e:
-        print(f"❌ Failed to configure TLS: {str(e)}")
+        print(f"Failed to configure TLS: {str(e)}")
         return
 
     try:
         print("🔌 Connecting to AWS IoT Core...")
         client.connect(MQTT_BROKER, MQTT_PORT, 60)
     except Exception as e:
-        print(f"❌ Connection error: {str(e)}")
+        print(f"Connection error: {str(e)}")
         return
 
-    print("\n🚀 Fog handler running. Waiting for LoRaWAN messages...")
-    print("📴 Press Ctrl+C to stop\n")
+    print("\n Fog handler running. Waiting for LoRaWAN messages...")
+    print(" Press Ctrl+C to stop\n")
 
     # Start Flask in a separate thread
     Thread(target=run_flask, daemon=True).start()
@@ -212,10 +212,10 @@ def main():
     try:
         client.loop_forever()
     except KeyboardInterrupt:
-        print("\n🛑 Shutdown signal received, disconnecting...")
+        print("\n Shutdown signal received, disconnecting...")
         client.disconnect()
     except Exception as e:
-        print(f"❌ Unexpected error: {str(e)}")
+        print(f" Unexpected error: {str(e)}")
 
 if __name__ == "__main__":
     main()

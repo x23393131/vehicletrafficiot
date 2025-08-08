@@ -166,9 +166,9 @@ def on_message(client, userdata, msg):
             print(f" Published alert for {gateway}")
 
     except json.JSONDecodeError:
-        print("❌ Failed to decode JSON payload")
+        print(" Failed to decode JSON payload")
     except Exception as e:
-        print(f"❌ Error processing message: {str(e)}")
+        print(f" Error processing message: {str(e)}")
 
 def run_flask():
     url = get_cloud9_preview_url(port=8080)

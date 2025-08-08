@@ -163,7 +163,7 @@
         });
 
         socket.on('connect_error', (err) => {
-            console.error('❌ Connection error:', err.message);
+            console.error(' Connection error:', err.message);
             document.getElementById('connection-status').className = 'badge bg-danger';
             document.getElementById('connection-status').textContent = 'Connection Failed';
         });

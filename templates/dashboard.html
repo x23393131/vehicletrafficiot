@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LoRaWAN Traffic Dashboard</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.3/dist/leaflet.css"/>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f5f5f5;
+        }
+        .dashboard-header {
+            background-color: #2c3e50;
+            color: white;
+            padding: 20px 0;
+            margin-bottom: 30px;
+        }
+        .card {
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+            border: none;
+        }
+        .card-header {
+            background-color: #3498db;
+            color: white;
+            font-weight: bold;
+        }
+        #map {
+            height: 500px;
+            border-radius: 4px;
+        }
+        .traffic-indicator {
+            font-size: 24px;
+            font-weight: bold;
+            padding: 10px;
+            border-radius: 4px;
+            text-align: center;
+            margin-bottom: 15px;
+        }
+        .traffic-low {
+            background-color: #2ecc71;
+            color: white;
+        }
+        .traffic-medium {
+            background-color: #f39c12;
+            color: white;
+        }
+        .traffic-high {
+            background-color: #e74c3c;
+            color: white;
+        }
+        .vehicle-marker {
+            background-color: rgba(231, 76, 60, 0.8);
+            border-radius: 50%;
+            width: 20px;
+            height: 20px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            color: white;
+            font-weight: bold;
+            font-size: 12px;
+        }
+        .gateway-marker {
+            background-color: rgba(52, 152, 219, 0.8);
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            color: white;
+            font-weight: bold;
+            font-size: 12px;
+        }
+        #connection-status {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            font-size: 14px;
+        }
+        .last-update {
+            font-size: 12px;
+            color: #7f8c8d;
+            text-align: right;
+            margin-top: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="dashboard-header">
+        <div class="container position-relative">
+            <h1>LoRaWAN Traffic Monitoring</h1>
+            <p>Real-time vehicle tracking from gateways</p>
+            <div id="connection-status" class="badge bg-secondary">Connecting...</div>
+        </div>
+    </div>
+
+    <div class="container">
+        <div class="row">
+            <div class="col-md-8">
+                <div class="card">
+                    <div class="card-header">Traffic Map</div>
+                    <div class="card-body">
+                        <div id="map"></div>
+                        <div class="last-update" id="last-update">No updates yet</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card">
+                    <div class="card-header">Traffic Status</div>
+                    <div class="card-body">
+                        <div id="traffic-indicator" class="traffic-low traffic-indicator">
+                            <span id="traffic-level-text">LOW</span> TRAFFIC
+                        </div>
+                        <div id="vehicle-count" class="h4 text-center">0 vehicles detected</div>
+                        <div class="mt-3">
+                            <h5>Active Gateways</h5>
+                            <ul id="gateway-list" class="list-group">
+                                <li class="list-group-item">No gateways active</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://unpkg.com/leaflet@1.9.3/dist/leaflet.js"></script>
+    <script src="https://cdn.socket.io/4.7.4/socket.io.min.js"></script>
+    <script>
+        // Initialize map
+        const map = L.map('map').setView([0, 0], 2);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+        }).addTo(map);
+
+        // Store markers and data
+        const vehicleMarkers = {};
+        const gatewayMarkers = {};
+        let lastUpdateTime = null;
+        let totalVehicles = 0;
+        let activeGateways = new Set();
+
+        // Connect to Socket.IO server with enhanced configuration
+        const socket = io({
+            reconnection: true,
+            reconnectionAttempts: 5,
+            reconnectionDelay: 1000,
+            timeout: 20000,
+            transports: ['websocket']
+        });
+
+        // Connection status handling
+        socket.on('connect', () => {
+            console.log('✅ Connected to server with ID:', socket.id);
+            document.getElementById('connection-status').className = 'badge bg-success';
+            document.getElementById('connection-status').textContent = 'Connected';
+        });
+
+        socket.on('connect_error', (err) => {
+            console.error('❌ Connection error:', err.message);
+            document.getElementById('connection-status').className = 'badge bg-danger';
+            document.getElementById('connection-status').textContent = 'Connection Failed';
+        });
+
+        socket.on('disconnect', (reason) => {
+            console.log('⚠️ Disconnected:', reason);
+            document.getElementById('connection-status').className = 'badge bg-warning';
+            document.getElementById('connection-status').textContent = 'Disconnected';
+            
+            if (reason === 'io server disconnect') {
+                socket.connect();
+            }
+        });
+
+        // Handle updates
+        socket.on('update', (data) => {
+            try {
+                console.log('🔄 Update:', data);
+                
+                // Validate and prepare data
+                const safeData = {
+                    timestamp: data.timestamp || new Date().toISOString(),
+                    lat: parseFloat(data.lat) || 0,
+                    lng: parseFloat(data.lng) || 0,
+                    vehicle_count: parseInt(data.vehicle_count) || 0,
+                    gateway: data.gateway || 'unknown',
+                    traffic_level: data.traffic_level || 'LOW'
+                };
+
+                // Update UI
+                lastUpdateTime = new Date();
+                document.getElementById('last-update').textContent = `Last update: ${lastUpdateTime.toLocaleTimeString()}`;
+                
+                updateTrafficStatus(safeData.vehicle_count, safeData.traffic_level);
+                updateGatewayList(safeData.gateway);
+                updateMapMarkers(safeData);
+            } catch (error) {
+                console.error('❌ Error processing update:', error);
+            }
+        });
+
+        function updateTrafficStatus(count, level) {
+            totalVehicles = count;
+            const indicator = document.getElementById('traffic-indicator');
+            const levelText = document.getElementById('traffic-level-text');
+            
+            indicator.classList.remove('traffic-low', 'traffic-medium', 'traffic-high');
+            
+            if (level === 'LOW') {
+                indicator.classList.add('traffic-low');
+                levelText.textContent = 'LOW';
+            } else if (level === 'MEDIUM') {
+                indicator.classList.add('traffic-medium');
+                levelText.textContent = 'MEDIUM';
+            } else {
+                indicator.classList.add('traffic-high');
+                levelText.textContent = 'HEAVY';
+            }
+            
+            document.getElementById('vehicle-count').textContent = 
+                `${count} vehicle${count !== 1 ? 's' : ''} detected`;
+        }
+
+        function updateGatewayList(gatewayId) {
+            if (gatewayId) {
+                activeGateways.add(gatewayId);
+            }
+            
+            const gatewayList = document.getElementById('gateway-list');
+            gatewayList.innerHTML = '';
+            
+            if (activeGateways.size === 0) {
+                gatewayList.innerHTML = '<li class="list-group-item">No gateways active</li>';
+            } else {
+                Array.from(activeGateways).sort().forEach(gateway => {
+                    const item = document.createElement('li');
+                    item.className = 'list-group-item d-flex justify-content-between align-items-center';
+                    item.innerHTML = `
+                        ${gateway}
+                        <span class="badge bg-primary rounded-pill">Active</span>
+                    `;
+                    gatewayList.appendChild(item);
+                });
+            }
+        }
+
+        function updateMapMarkers(data) {
+            const lat = data.lat;
+            const lng = data.lng;
+            const vehicle_count = data.vehicle_count;
+            const gateway = data.gateway || 'unknown';
+            const traffic_level = data.traffic_level || 'LOW';
+            
+            // Vehicle marker
+            if (!vehicleMarkers[gateway]) {
+                const marker = L.marker([lat, lng], {
+                    icon: L.divIcon({
+                        className: 'vehicle-marker',
+                        html: vehicle_count,
+                        iconSize: [20, 20]
+                    })
+                }).addTo(map);
+                
+                marker.bindPopup(`
+                    <strong>Gateway:</strong> ${gateway}<br>
+                    <strong>Vehicles:</strong> ${vehicle_count}<br>
+                    <strong>Status:</strong> ${traffic_level}<br>
+                    <strong>Location:</strong> ${lat.toFixed(4)}, ${lng.toFixed(4)}<br>
+                    <strong>Time:</strong> ${new Date(data.timestamp).toLocaleTimeString()}
+                `);
+                
+                vehicleMarkers[gateway] = marker;
+            } else {
+                vehicleMarkers[gateway].setLatLng([lat, lng]);
+                vehicleMarkers[gateway]._icon.innerHTML = vehicle_count;
+                vehicleMarkers[gateway].setPopupContent(`
+                    <strong>Gateway:</strong> ${gateway}<br>
+                    <strong>Vehicles:</strong> ${vehicle_count}<br>
+                    <strong>Status:</strong> ${traffic_level}<br>
+                    <strong>Location:</strong> ${lat.toFixed(4)}, ${lng.toFixed(4)}<br>
+                    <strong>Time:</strong> ${new Date(data.timestamp).toLocaleTimeString()}
+                `);
+            }
+            
+            // Gateway marker
+            if (!gatewayMarkers[gateway]) {
+                const marker = L.marker([lat, lng], {
+                    icon: L.divIcon({
+                        className: 'gateway-marker',
+                        html: 'GW',
+                        iconSize: [30, 30]
+                    })
+                }).addTo(map);
+                
+                marker.bindPopup(`
+                    <strong>Gateway:</strong> ${gateway}<br>
+                    <strong>Last Update:</strong> ${new Date(data.timestamp).toLocaleTimeString()}<br>
+                    <strong>Location:</strong> ${lat.toFixed(4)}, ${lng.toFixed(4)}
+                `);
+                
+                gatewayMarkers[gateway] = marker;
+            } else {
+                gatewayMarkers[gateway].setLatLng([lat, lng]);
+                gatewayMarkers[gateway].setPopupContent(`
+                    <strong>Gateway:</strong> ${gateway}<br>
+                    <strong>Last Update:</strong> ${new Date(data.timestamp).toLocaleTimeString()}<br>
+                    <strong>Location:</strong> ${lat.toFixed(4)}, ${lng.toFixed(4)}
+                `);
+            }
+            
+            map.setView([lat, lng], 15);
+        }
+
+        // Initial setup
+        document.addEventListener('DOMContentLoaded', () => {
+            console.log('Dashboard initialized');
+            
+            setTimeout(() => {
+                if (!socket.connected) {
+                    console.error('❌ No connection after 5 seconds');
+                    document.getElementById('connection-status').className = 'badge bg-danger';
+                    document.getElementById('connection-status').textContent = 'Connection Failed';
+                    socket.connect();
+                }
+            }, 5000);
+        });
+    </script>
+</body>
+</html>
